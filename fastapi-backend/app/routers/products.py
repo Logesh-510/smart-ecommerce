@@ -35,8 +35,10 @@ def create_product(
     product = Product(
         name=product_data.name,
         description=product_data.description,
+        category=product_data.category,
         price=product_data.price,
         stock=product_data.stock,
+        popularity=product_data.popularity,
         images=product_data.images
     )
 
@@ -48,7 +50,7 @@ def create_product(
 
 
 # --------------------------------
-# GET ALL PRODUCTS
+# GET ALL PRODUCTS + FILTERS
 # --------------------------------
 
 @router.get(
@@ -56,11 +58,52 @@ def create_product(
     response_model=list[ProductResponse]
 )
 def get_products(
+    category: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    min_popularity: int | None = None,
+    in_stock: bool | None = None,
     db: Session = Depends(get_db)
 ):
 
-    return db.query(Product).all()
+    query = db.query(Product)
 
+    # Category filter
+    if category:
+        query = query.filter(
+            Product.category == category
+        )
+
+    # Minimum price
+    if min_price is not None:
+        query = query.filter(
+            Product.price >= min_price
+        )
+
+    # Maximum price
+    if max_price is not None:
+        query = query.filter(
+            Product.price <= max_price
+        )
+
+    # Popularity filter
+    if min_popularity is not None:
+        query = query.filter(
+            Product.popularity >= min_popularity
+        )
+
+    # Stock availability
+    if in_stock is True:
+        query = query.filter(
+            Product.stock > 0
+        )
+
+    if in_stock is False:
+        query = query.filter(
+            Product.stock == 0
+        )
+
+    return query.all()
 
 # --------------------------------
 # GET SINGLE PRODUCT
