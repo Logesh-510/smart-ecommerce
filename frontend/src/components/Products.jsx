@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/api";
+import { addToCart } from "../api/cart";
 
 function Products() {
   const [products, setProducts] = useState([]);
@@ -20,6 +21,25 @@ function Products() {
         setLoading(false);
       });
   }, []);
+
+  async function handleAddToCart(productId) {
+    try {
+      await addToCart(productId, 1);
+
+      alert("Product added to cart");
+    } catch (error) {
+      console.error("Add to cart error:", error);
+
+      if (error.response) {
+        alert(
+          error.response.data?.detail ||
+            "Unable to add product to cart"
+        );
+      } else {
+        alert("Unable to connect to backend");
+      }
+    }
+  }
 
   if (loading) {
     return <p>Loading products...</p>;
@@ -44,11 +64,20 @@ function Products() {
 
             <p>Category: {product.category}</p>
 
-            <p>Price: ₹{Number(product.price).toLocaleString("en-IN")}</p>
+            <p>
+              Price: ₹
+              {Number(product.price).toLocaleString("en-IN")}
+            </p>
 
             <p>Stock: {product.stock}</p>
 
             <p>Popularity: {product.popularity}</p>
+
+            <button
+              onClick={() => handleAddToCart(product.id)}
+            >
+              Add to Cart
+            </button>
 
             <hr />
           </div>
