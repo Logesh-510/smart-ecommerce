@@ -104,7 +104,7 @@ def login(
             detail="Invalid email or password"
         )
 
-    if not verify_password(
+    if not user.password or not verify_password(
         user_data.password,
         user.password
     ):
@@ -235,8 +235,14 @@ def auth0_login():
 
 @router.get("/auth0/callback")
 async def auth0_callback(
-    code: str
+    code: str,
+    db: Session = Depends(get_db)
 ):
+
+    # --------------------------------------------------------
+    # 1. Exchange authorization code for Auth0 tokens
+    # --------------------------------------------------------
+
     token_url = (
         f"https://{settings.AUTH0_DOMAIN}/oauth/token"
     )
@@ -253,8 +259,14 @@ async def auth0_callback(
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 token_url,
-                data=payload
+                data=payload,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
             )
+
+            print("AUTH0 TOKEN STATUS:", response.status_code)
+            print("AUTH0 TOKEN RESPONSE:", response.text)
 
     except httpx.RequestError as exc:
         raise HTTPException(
@@ -276,4 +288,118 @@ async def auth0_callback(
             }
         )
 
-    return response.json()
+    token_data = response.json()
+
+    auth0_access_token = token_data.get("access_token")
+
+    if not auth0_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auth0 access token was not returned"
+        )
+
+    # --------------------------------------------------------
+    # 2. Get user information from Auth0
+    # --------------------------------------------------------
+
+    userinfo_url = (
+        f"https://{settings.AUTH0_DOMAIN}/userinfo"
+    )
+
+    try:
+        async with httpx.AsyncClient() as client:
+            userinfo_response = await client.get(
+                userinfo_url,
+                headers={
+                    "Authorization":
+                    f"Bearer {auth0_access_token}"
+                }
+            )
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Unable to retrieve Auth0 user: {str(exc)}"
+        )
+
+    if userinfo_response.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to retrieve user information from Auth0"
+        )
+
+    userinfo = userinfo_response.json()
+
+    # --------------------------------------------------------
+    # 3. Extract user information
+    # --------------------------------------------------------
+
+    email = userinfo.get("email")
+    name = (
+        userinfo.get("name")
+        or userinfo.get("nickname")
+        or "Auth0 User"
+    )
+
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email was not provided by Auth0"
+        )
+
+    # --------------------------------------------------------
+    # 4. Find existing local user
+    # --------------------------------------------------------
+
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+
+    # --------------------------------------------------------
+    # 5. Create local user if not found
+    # --------------------------------------------------------
+
+    if not user:
+
+        user = User(
+            name=name,
+            email=email,
+            password=None,
+            role="customer"
+        )
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # --------------------------------------------------------
+    # 6. Generate our application's JWT tokens
+    # --------------------------------------------------------
+
+    access_token = create_access_token(
+        user_id=user.id,
+        role=user.role
+    )
+
+    refresh_token = create_refresh_token(
+        user_id=user.id
+    )
+
+    # --------------------------------------------------------
+    # 7. Return our JWT tokens
+    # --------------------------------------------------------
+
+    return {
+        "message": "Auth0 login successful",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role
+        },
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }

@@ -106,6 +106,24 @@ def get_products(
     return query.all()
 
 # --------------------------------
+# GET PRODUCTS BY CATEGORY
+# --------------------------------
+
+@router.get(
+    "/category/{category}",
+    response_model=list[ProductResponse]
+)
+def get_products_by_category(
+    category: str,
+    db: Session = Depends(get_db)
+):
+    products = db.query(Product).filter(
+        Product.category == category
+    ).all()
+
+    return products
+
+# --------------------------------
 # GET SINGLE PRODUCT
 # --------------------------------
 
