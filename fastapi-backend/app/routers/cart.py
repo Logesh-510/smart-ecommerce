@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.dependencies.rbac import require_role
-from app.models.cart import Cart
+from app.models.cart import Cart, CartItem
 from app.models.product import Product
 from app.models.user import User
 from app.schemas.cart import (
@@ -46,22 +46,45 @@ def add_to_cart(
             detail="Insufficient stock"
         )
 
-    # Check if already in cart
-    existing_item = db.query(Cart).filter(
-        Cart.user_id == current_user.id,
-        Cart.product_id == cart_data.product_id
+    # Get existing cart or create one
+    cart = db.query(Cart).filter(
+        Cart.user_id == current_user.id
+    ).first()
+
+    if not cart:
+        cart = Cart(user_id=current_user.id)
+        db.add(cart)
+        db.flush()
+
+    # Check whether product is already in cart
+    existing_item = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id,
+        CartItem.product_id == cart_data.product_id
     ).first()
 
     if existing_item:
-        existing_item.quantity += cart_data.quantity
+        new_quantity = existing_item.quantity + cart_data.quantity
+
+        if new_quantity > product.stock:
+            raise HTTPException(
+                status_code=400,
+                detail="Insufficient stock"
+            )
+
+        existing_item.quantity = new_quantity
         db.commit()
         db.refresh(existing_item)
 
-        return existing_item
+        return {
+            "id": existing_item.id,
+            "user_id": current_user.id,
+            "product_id": existing_item.product_id,
+            "quantity": existing_item.quantity
+        }
 
     # Create new cart item
-    cart_item = Cart(
-        user_id=current_user.id,
+    cart_item = CartItem(
+        cart_id=cart.id,
         product_id=cart_data.product_id,
         quantity=cart_data.quantity
     )
@@ -70,7 +93,12 @@ def add_to_cart(
     db.commit()
     db.refresh(cart_item)
 
-    return cart_item
+    return {
+        "id": cart_item.id,
+        "user_id": current_user.id,
+        "product_id": cart_item.product_id,
+        "quantity": cart_item.quantity
+    }
 
 
 @router.get(
@@ -81,9 +109,26 @@ def get_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    return db.query(Cart).filter(
+    cart = db.query(Cart).filter(
         Cart.user_id == current_user.id
+    ).first()
+
+    if not cart:
+        return []
+
+    items = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id
     ).all()
+
+    return [
+        {
+            "id": item.id,
+            "user_id": current_user.id,
+            "product_id": item.product_id,
+            "quantity": item.quantity
+        }
+        for item in items
+    ]
 
 
 @router.put(
@@ -96,9 +141,19 @@ def update_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    cart_item = db.query(Cart).filter(
-        Cart.user_id == current_user.id,
-        Cart.product_id == product_id
+    cart = db.query(Cart).filter(
+        Cart.user_id == current_user.id
+    ).first()
+
+    if not cart:
+        raise HTTPException(
+            status_code=404,
+            detail="Cart not found"
+        )
+
+    cart_item = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id,
+        CartItem.product_id == product_id
     ).first()
 
     if not cart_item:
@@ -111,6 +166,12 @@ def update_cart(
         Product.id == product_id
     ).first()
 
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
+
     if cart_data.quantity > product.stock:
         raise HTTPException(
             status_code=400,
@@ -122,7 +183,12 @@ def update_cart(
     db.commit()
     db.refresh(cart_item)
 
-    return cart_item
+    return {
+        "id": cart_item.id,
+        "user_id": current_user.id,
+        "product_id": cart_item.product_id,
+        "quantity": cart_item.quantity
+    }
 
 
 @router.delete("/{product_id}")
@@ -131,9 +197,19 @@ def remove_from_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    cart_item = db.query(Cart).filter(
-        Cart.user_id == current_user.id,
-        Cart.product_id == product_id
+    cart = db.query(Cart).filter(
+        Cart.user_id == current_user.id
+    ).first()
+
+    if not cart:
+        raise HTTPException(
+            status_code=404,
+            detail="Cart not found"
+        )
+
+    cart_item = db.query(CartItem).filter(
+        CartItem.cart_id == cart.id,
+        CartItem.product_id == product_id
     ).first()
 
     if not cart_item:
