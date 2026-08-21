@@ -9,10 +9,31 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    total_amount = Column(Numeric(10, 2), nullable=False)
-    status = Column(String, default="pending", nullable=False)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    total_amount = Column(
+        Numeric(10, 2),
+        nullable=False
+    )
+
+    # pending, paid, shipped, delivered, cancelled
+    status = Column(
+        String,
+        default="pending",
+        nullable=False
+    )
+
+    # pending, paid, failed
+    payment_status = Column(
+        String,
+        default="pending",
+        nullable=False
+    )
 
     created_at = Column(
         DateTime(timezone=True),
@@ -20,10 +41,21 @@ class Order(Base):
         nullable=False
     )
 
-    user = relationship("User", back_populates="orders")
+    user = relationship(
+        "User",
+        back_populates="orders"
+    )
+
     items = relationship(
         "OrderItem",
         back_populates="order",
+        cascade="all, delete-orphan"
+    )
+
+    payment = relationship(
+        "Payment",
+        back_populates="order",
+        uselist=False,
         cascade="all, delete-orphan"
     )
 

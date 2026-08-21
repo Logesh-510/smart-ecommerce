@@ -13,6 +13,7 @@ class OrderResponse(BaseModel):
     user_id: int
     total_amount: float
     status: str
+    payment_status: str
     items: List[OrderItemResponse]
 
     class Config:

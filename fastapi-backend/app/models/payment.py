@@ -45,4 +45,7 @@ class Payment(Base):
         nullable=False
     )
 
-    order = relationship("Order")
+    order = relationship(
+        "Order",
+        back_populates="payment"
+    )

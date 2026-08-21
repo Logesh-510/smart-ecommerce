@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.cart import Cart
+from app.models.cart import Cart, CartItem
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.user import User
@@ -32,12 +32,20 @@ def create_order(
     current_user: User = Depends(get_current_user)
 ):
     # 1. Get user's cart
-    cart_items = (
+    cart = (
         db.query(Cart)
         .filter(Cart.user_id == current_user.id)
-        .all()
+        .first()
     )
 
+    if not cart or not cart.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cart is empty"
+        )
+
+    cart_items = cart.items
+    
     if not cart_items:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

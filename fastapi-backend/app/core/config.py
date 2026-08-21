@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     AUTH0_CLIENT_SECRET: str
     AUTH0_CALLBACK_URL: str
 
+    # Stripe
+    STRIPE_SECRET_KEY: str
+    STRIPE_WEBHOOK_SECRET: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore"

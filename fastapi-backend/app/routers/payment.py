@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import stripe
+
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.payment import Payment
 from app.models.order import Order
@@ -11,12 +14,17 @@ from app.schemas.payment import (
     PaymentStatusUpdate
 )
 
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
 router = APIRouter(
     prefix="/payments",
     tags=["Payments"]
 )
 
 
+# ---------------------------------------------------------
+# Create Payment
+# ---------------------------------------------------------
 @router.post(
     "/",
     response_model=PaymentResponse,
@@ -60,6 +68,11 @@ def create_payment(
     db.refresh(payment)
 
     return payment
+
+
+# ---------------------------------------------------------
+# Get My Payments
+# ---------------------------------------------------------
 @router.get(
     "/",
     response_model=list[PaymentResponse]
@@ -76,6 +89,11 @@ def get_my_payments(
     )
 
     return payments
+
+
+# ---------------------------------------------------------
+# Update Payment Status - Admin
+# ---------------------------------------------------------
 @router.put(
     "/{payment_id}/status",
     response_model=PaymentResponse
@@ -102,7 +120,11 @@ def update_payment_status(
             detail="Payment not found"
         )
 
-    allowed_statuses = ["pending", "completed", "failed"]
+    allowed_statuses = [
+        "pending",
+        "completed",
+        "failed"
+    ]
 
     if status_data.status not in allowed_statuses:
         raise HTTPException(
@@ -116,3 +138,224 @@ def update_payment_status(
     db.refresh(payment)
 
     return payment
+
+
+# ---------------------------------------------------------
+# Stripe Checkout
+# ---------------------------------------------------------
+@router.post("/checkout")
+def create_checkout_session(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.user_id == current_user.id
+    ).first()
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    if order.status == "cancelled":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot pay for a cancelled order"
+        )
+
+    # Create Stripe line item
+    line_items = [
+        {
+            "price_data": {
+                "currency": "inr",
+                "product_data": {
+                    "name": f"Order #{order.id}"
+                },
+                "unit_amount": int(order.total_amount * 100),
+            },
+            "quantity": 1,
+        }
+    ]
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
+            mode="payment",
+
+            success_url=(
+                "http://127.0.0.1:8000/payments/success"
+                "?session_id={CHECKOUT_SESSION_ID}"
+            ),
+
+            cancel_url=(
+                "http://127.0.0.1:8000/payments/cancel"
+            ),
+
+            # IMPORTANT:
+            # This connects Stripe Checkout to our Order.
+            metadata={
+                "order_id": str(order.id),
+                "user_id": str(current_user.id),
+            }
+        )
+
+        return {
+            "checkout_url": checkout_session.url,
+            "session_id": checkout_session.id,
+            "order_id": order.id,
+        }
+
+    except stripe.StripeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+# ---------------------------------------------------------
+# Payment Success
+# ---------------------------------------------------------
+@router.get("/success")
+def payment_success():
+    return {
+        "message": "Payment completed successfully"
+    }
+
+
+# ---------------------------------------------------------
+# Payment Cancel
+# ---------------------------------------------------------
+@router.get("/cancel")
+def payment_cancel():
+    return {
+        "message": "Payment was cancelled"
+    }
+
+
+# ---------------------------------------------------------
+# Stripe Webhook
+# ---------------------------------------------------------
+@router.post("/webhook")
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+
+    if not signature:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing Stripe signature"
+        )
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            signature,
+            settings.STRIPE_WEBHOOK_SECRET
+        )
+
+        print("WEBHOOK EVENT TYPE:", event["type"])
+
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid webhook payload"
+        )
+
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Stripe signature"
+        )
+
+    # -----------------------------------------------------
+    # Handle successful Checkout
+    # -----------------------------------------------------
+    if event["type"] == "checkout.session.completed":
+
+        session = event["data"]["object"]
+
+        # Stripe Event objects can behave differently
+        # depending on the SDK version, so convert safely.
+        if hasattr(session, "to_dict"):
+            session_data = session.to_dict()
+        else:
+            session_data = dict(session)
+
+        metadata = session_data.get("metadata") or {}
+
+        order_id = metadata.get("order_id")
+
+        print("Stripe webhook received")
+        print("Session ID:", session_data.get("id"))
+        print("Metadata:", metadata)
+        print("Order ID:", order_id)
+
+        if not order_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Order ID missing from Stripe metadata"
+            )
+
+        order = (
+            db.query(Order)
+            .filter(Order.id == int(order_id))
+            .first()
+        )
+
+        if not order:
+            raise HTTPException(
+                status_code=404,
+                detail="Order not found"
+            )
+
+        # Find existing payment
+        payment = (
+            db.query(Payment)
+            .filter(Payment.order_id == order.id)
+            .first()
+        )
+
+        payment_intent_id = session_data.get("payment_intent")
+
+        if payment:
+
+            payment.status = "completed"
+            payment.payment_method = "stripe"
+
+            if payment_intent_id:
+                payment.transaction_id = payment_intent_id
+
+        else:
+
+            payment = Payment(
+                order_id=order.id,
+                amount=order.total_amount,
+                payment_method="stripe",
+                status="completed",
+                transaction_id=payment_intent_id
+            )
+
+            db.add(payment)
+
+        # Update order
+        order.status = "confirmed"
+        order.payment_status = "paid"
+
+        db.commit()
+
+        print("ORDER UPDATED SUCCESSFULLY")
+        print("Order ID:", order.id)
+        print("Order Status:", order.status)
+        print("Payment Status:", order.payment_status)
+
+    return {
+        "message": "Webhook processed successfully",
+        "event_type": event["type"]
+    }
