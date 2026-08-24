@@ -7,6 +7,7 @@ from app.models.cart import Cart, CartItem
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.user import User
+from app.routers.notifications import create_notification
 from app.schemas.order import OrderResponse
 from app.dependencies.auth import get_current_user
 from app.dependencies.rbac import require_role
@@ -199,6 +200,13 @@ def update_order_status(
         )
 
     order.status = request.status
+
+    create_notification(
+        db,
+        order.user_id,
+        "order_status",
+        f"Your order #{order.id} status has been updated to {order.status}."
+    )
 
     db.commit()
     db.refresh(order)

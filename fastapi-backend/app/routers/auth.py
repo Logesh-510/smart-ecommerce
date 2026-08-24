@@ -18,6 +18,7 @@ from app.core.security import (
     create_refresh_token,
 )
 from app.models.user import User
+from app.routers.notifications import create_notification
 
 from app.schemas.auth import (
     RegisterRequest,
@@ -76,6 +77,13 @@ def register(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    create_notification(
+        db,
+        new_user.id,
+        "welcome",
+        "Welcome to Smart E-Commerce!"
+    )
 
     return new_user
 
