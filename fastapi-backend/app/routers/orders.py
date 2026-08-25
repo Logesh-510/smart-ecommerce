@@ -3,11 +3,16 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.cart import Cart, CartItem
+from app.models.cart import Cart
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.user import User
+
 from app.routers.notifications import create_notification
+from app.routers.websocket import manager
+
+from app.services.email import send_email
+
 from app.schemas.order import OrderResponse
 from app.dependencies.auth import get_current_user
 from app.dependencies.rbac import require_role
@@ -23,6 +28,9 @@ class OrderStatusUpdate(BaseModel):
     status: str
 
 
+# ---------------------------------------------------------
+# Create Order
+# ---------------------------------------------------------
 @router.post(
     "",
     response_model=OrderResponse,
@@ -46,12 +54,6 @@ def create_order(
         )
 
     cart_items = cart.items
-    
-    if not cart_items:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cart is empty"
-        )
 
     # 2. Create order
     order = Order(
@@ -117,12 +119,36 @@ def create_order(
     # 7. Save everything
     db.commit()
 
-    # 8. Reload order with items
+    # 8. Reload order
     db.refresh(order)
+
+    # 9. Create in-app notification
+    create_notification(
+        db,
+        current_user.id,
+        "order_confirmation",
+        f"Your order #{order.id} has been placed successfully."
+    )
+
+    # 10. Send order confirmation email
+    send_email(
+        current_user.email,
+        f"Order #{order.id} Confirmation",
+        (
+            f"Hello {current_user.name},\n\n"
+            f"Your order #{order.id} has been placed successfully.\n"
+            f"Order total: ₹{order.total_amount}\n"
+            f"Order status: {order.status}\n\n"
+            "Thank you for shopping with Smart E-Commerce!"
+        )
+    )
 
     return order
 
 
+# ---------------------------------------------------------
+# Get My Orders
+# ---------------------------------------------------------
 @router.get(
     "",
     response_model=list[OrderResponse]
@@ -141,6 +167,9 @@ def get_my_orders(
     return orders
 
 
+# ---------------------------------------------------------
+# Get All Orders - Admin
+# ---------------------------------------------------------
 # IMPORTANT:
 # This route must be declared before /{order_id}/status
 @router.get(
@@ -160,11 +189,14 @@ def get_all_orders(
     return orders
 
 
+# ---------------------------------------------------------
+# Update Order Status - Admin
+# ---------------------------------------------------------
 @router.put(
     "/{order_id}/status",
     response_model=OrderResponse
 )
-def update_order_status(
+async def update_order_status(
     order_id: int,
     request: OrderStatusUpdate,
     db: Session = Depends(get_db),
@@ -178,6 +210,7 @@ def update_order_status(
         "cancelled"
     }
 
+    # 1. Validate status
     if request.status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -187,6 +220,7 @@ def update_order_status(
             )
         )
 
+    # 2. Find order
     order = (
         db.query(Order)
         .filter(Order.id == order_id)
@@ -199,15 +233,49 @@ def update_order_status(
             detail="Order not found"
         )
 
+    # 3. Update order status
     order.status = request.status
 
+    message = (
+        f"Your order #{order.id} status has been updated "
+        f"to {order.status}."
+    )
+
+    # 4. Create in-app notification
     create_notification(
         db,
         order.user_id,
         "order_status",
-        f"Your order #{order.id} status has been updated to {order.status}."
+        message
     )
 
+    # 5. Find customer
+    customer = (
+        db.query(User)
+        .filter(User.id == order.user_id)
+        .first()
+    )
+
+    # 6. Send email notification
+    if customer:
+        send_email(
+            customer.email,
+            f"Order #{order.id} Status Update",
+            message
+        )
+
+    # 7. WebSocket real-time notification
+    await manager.send_personal_message(
+        order.user_id,
+        {
+            "event": "order_status_updated",
+            "order_id": order.id,
+            "status": order.status,
+            "message": message
+        }
+    )
+
+    # 8. Commit database changes
     db.commit()
     db.refresh(order)
 

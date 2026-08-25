@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str
 
+    # Email / SMTP
+    SMTP_HOST: str
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str
+    SMTP_PASSWORD: str
+    SMTP_FROM_EMAIL: str
+    SMTP_USE_TLS: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore"
