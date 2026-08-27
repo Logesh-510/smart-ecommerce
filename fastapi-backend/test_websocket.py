@@ -1,27 +1,23 @@
 import asyncio
+import os
 import websockets
 
 
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5Iiwicm9sZSI6ImN1c3RvbWVyIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc4NzY0MjQxOH0.8N-62NQOXtj8LIel-lPGI5PdSIQ2NONCezmHMf_Qtno"
+TOKEN = os.getenv("TEST_WS_TOKEN")
 
 
 async def test_websocket():
+    if not TOKEN:
+        raise ValueError("TEST_WS_TOKEN environment variable is not set")
 
-    url = f"ws://127.0.0.1:8000/ws?token={TOKEN}"
+    uri = f"ws://127.0.0.1:8000/ws?token={TOKEN}"
 
-    try:
-        async with websockets.connect(url) as websocket:
+    async with websockets.connect(uri) as websocket:
+        print("Connected to WebSocket")
 
-            print("WebSocket connected successfully!")
-            print("Waiting for real-time notifications...")
-
-            while True:
-                message = await websocket.recv()
-
-                print("Received:", message)
-
-    except Exception as e:
-        print("WebSocket connection failed:", e)
+        while True:
+            message = await websocket.recv()
+            print("Received:", message)
 
 
 asyncio.run(test_websocket())

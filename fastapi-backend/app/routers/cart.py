@@ -6,11 +6,13 @@ from app.dependencies.rbac import require_role
 from app.models.cart import Cart, CartItem
 from app.models.product import Product
 from app.models.user import User
+from app.routers.websocket import manager
 from app.schemas.cart import (
     CartItemCreate,
     CartItemUpdate,
     CartItemResponse,
 )
+
 
 router = APIRouter(
     prefix="/cart",
@@ -18,20 +20,25 @@ router = APIRouter(
 )
 
 
+# =========================================================
+# Add Product to Cart
+# =========================================================
 @router.post(
     "",
     response_model=CartItemResponse,
     status_code=201
 )
-def add_to_cart(
+async def add_to_cart(
     cart_data: CartItemCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
     # Check product exists
-    product = db.query(Product).filter(
-        Product.id == cart_data.product_id
-    ).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == cart_data.product_id)
+        .first()
+    )
 
     if not product:
         raise HTTPException(
@@ -47,9 +54,11 @@ def add_to_cart(
         )
 
     # Get existing cart or create one
-    cart = db.query(Cart).filter(
-        Cart.user_id == current_user.id
-    ).first()
+    cart = (
+        db.query(Cart)
+        .filter(Cart.user_id == current_user.id)
+        .first()
+    )
 
     if not cart:
         cart = Cart(user_id=current_user.id)
@@ -57,13 +66,20 @@ def add_to_cart(
         db.flush()
 
     # Check whether product is already in cart
-    existing_item = db.query(CartItem).filter(
-        CartItem.cart_id == cart.id,
-        CartItem.product_id == cart_data.product_id
-    ).first()
+    existing_item = (
+        db.query(CartItem)
+        .filter(
+            CartItem.cart_id == cart.id,
+            CartItem.product_id == cart_data.product_id
+        )
+        .first()
+    )
 
     if existing_item:
-        new_quantity = existing_item.quantity + cart_data.quantity
+        new_quantity = (
+            existing_item.quantity +
+            cart_data.quantity
+        )
 
         if new_quantity > product.stock:
             raise HTTPException(
@@ -72,8 +88,21 @@ def add_to_cart(
             )
 
         existing_item.quantity = new_quantity
+
         db.commit()
         db.refresh(existing_item)
+
+        # Real-time cart notification
+        await manager.send_personal_message(
+            current_user.id,
+            {
+                "event": "cart_updated",
+                "action": "updated",
+                "product_id": existing_item.product_id,
+                "quantity": existing_item.quantity,
+                "message": "Cart updated successfully."
+            }
+        )
 
         return {
             "id": existing_item.id,
@@ -93,6 +122,18 @@ def add_to_cart(
     db.commit()
     db.refresh(cart_item)
 
+    # Real-time cart notification
+    await manager.send_personal_message(
+        current_user.id,
+        {
+            "event": "cart_updated",
+            "action": "added",
+            "product_id": cart_item.product_id,
+            "quantity": cart_item.quantity,
+            "message": "Product added to cart."
+        }
+    )
+
     return {
         "id": cart_item.id,
         "user_id": current_user.id,
@@ -101,6 +142,9 @@ def add_to_cart(
     }
 
 
+# =========================================================
+# Get Cart
+# =========================================================
 @router.get(
     "",
     response_model=list[CartItemResponse]
@@ -109,16 +153,20 @@ def get_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    cart = db.query(Cart).filter(
-        Cart.user_id == current_user.id
-    ).first()
+    cart = (
+        db.query(Cart)
+        .filter(Cart.user_id == current_user.id)
+        .first()
+    )
 
     if not cart:
         return []
 
-    items = db.query(CartItem).filter(
-        CartItem.cart_id == cart.id
-    ).all()
+    items = (
+        db.query(CartItem)
+        .filter(CartItem.cart_id == cart.id)
+        .all()
+    )
 
     return [
         {
@@ -131,19 +179,24 @@ def get_cart(
     ]
 
 
+# =========================================================
+# Update Cart Item
+# =========================================================
 @router.put(
     "/{product_id}",
     response_model=CartItemResponse
 )
-def update_cart(
+async def update_cart(
     product_id: int,
     cart_data: CartItemUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    cart = db.query(Cart).filter(
-        Cart.user_id == current_user.id
-    ).first()
+    cart = (
+        db.query(Cart)
+        .filter(Cart.user_id == current_user.id)
+        .first()
+    )
 
     if not cart:
         raise HTTPException(
@@ -151,10 +204,14 @@ def update_cart(
             detail="Cart not found"
         )
 
-    cart_item = db.query(CartItem).filter(
-        CartItem.cart_id == cart.id,
-        CartItem.product_id == product_id
-    ).first()
+    cart_item = (
+        db.query(CartItem)
+        .filter(
+            CartItem.cart_id == cart.id,
+            CartItem.product_id == product_id
+        )
+        .first()
+    )
 
     if not cart_item:
         raise HTTPException(
@@ -162,9 +219,11 @@ def update_cart(
             detail="Product not found in cart"
         )
 
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
 
     if not product:
         raise HTTPException(
@@ -183,6 +242,18 @@ def update_cart(
     db.commit()
     db.refresh(cart_item)
 
+    # Real-time cart notification
+    await manager.send_personal_message(
+        current_user.id,
+        {
+            "event": "cart_updated",
+            "action": "updated",
+            "product_id": cart_item.product_id,
+            "quantity": cart_item.quantity,
+            "message": "Cart quantity updated."
+        }
+    )
+
     return {
         "id": cart_item.id,
         "user_id": current_user.id,
@@ -191,15 +262,20 @@ def update_cart(
     }
 
 
+# =========================================================
+# Remove Product from Cart
+# =========================================================
 @router.delete("/{product_id}")
-def remove_from_cart(
+async def remove_from_cart(
     product_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    cart = db.query(Cart).filter(
-        Cart.user_id == current_user.id
-    ).first()
+    cart = (
+        db.query(Cart)
+        .filter(Cart.user_id == current_user.id)
+        .first()
+    )
 
     if not cart:
         raise HTTPException(
@@ -207,10 +283,14 @@ def remove_from_cart(
             detail="Cart not found"
         )
 
-    cart_item = db.query(CartItem).filter(
-        CartItem.cart_id == cart.id,
-        CartItem.product_id == product_id
-    ).first()
+    cart_item = (
+        db.query(CartItem)
+        .filter(
+            CartItem.cart_id == cart.id,
+            CartItem.product_id == product_id
+        )
+        .first()
+    )
 
     if not cart_item:
         raise HTTPException(
@@ -220,6 +300,18 @@ def remove_from_cart(
 
     db.delete(cart_item)
     db.commit()
+
+    # Real-time cart notification
+    await manager.send_personal_message(
+        current_user.id,
+        {
+            "event": "cart_updated",
+            "action": "removed",
+            "product_id": product_id,
+            "quantity": 0,
+            "message": "Product removed from cart."
+        }
+    )
 
     return {
         "message": "Product removed from cart"

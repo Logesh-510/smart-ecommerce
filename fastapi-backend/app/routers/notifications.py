@@ -7,13 +7,15 @@ from app.models.user import User
 from app.schemas.notification import NotificationResponse
 from app.dependencies.rbac import require_role
 
-
 router = APIRouter(
     prefix="/notifications",
     tags=["Notifications"]
 )
 
 
+# =========================================================
+# Get My Notifications
+# =========================================================
 @router.get(
     "",
     response_model=list[NotificationResponse]
@@ -22,14 +24,23 @@ def get_notifications(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    notifications = db.query(Notification).filter(
-        Notification.user_id == current_user.id
-    ).order_by(
-        Notification.timestamp.desc()
-    ).all()
+    notifications = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == current_user.id
+        )
+        .order_by(
+            Notification.timestamp.desc()
+        )
+        .all()
+    )
 
     return notifications
 
+
+# =========================================================
+# Mark Notification as Read
+# =========================================================
 @router.patch(
     "/{notification_id}/read",
     response_model=NotificationResponse
@@ -39,10 +50,14 @@ def mark_notification_as_read(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("customer"))
 ):
-    notification = db.query(Notification).filter(
-        Notification.id == notification_id,
-        Notification.user_id == current_user.id
-    ).first()
+    notification = (
+        db.query(Notification)
+        .filter(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id
+        )
+        .first()
+    )
 
     if not notification:
         raise HTTPException(
@@ -57,6 +72,10 @@ def mark_notification_as_read(
 
     return notification
 
+
+# =========================================================
+# Create Notification
+# =========================================================
 def create_notification(
     db: Session,
     user_id: int,
