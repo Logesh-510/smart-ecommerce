@@ -166,6 +166,28 @@ def get_my_orders(
 
     return orders
 
+
+# ---------------------------------------------------------
+# Get All Orders - Admin
+# ---------------------------------------------------------
+# IMPORTANT:
+# This route must be declared before /{order_id}/status
+@router.get(
+    "/admin",
+    response_model=list[OrderResponse]
+)
+def get_all_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+    orders = (
+        db.query(Order)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+
+    return orders
+
 # ---------------------------------------------------------
 # Get Order By ID
 # ---------------------------------------------------------
@@ -194,28 +216,6 @@ def get_order_by_id(
         )
 
     return order
-
-# ---------------------------------------------------------
-# Get All Orders - Admin
-# ---------------------------------------------------------
-# IMPORTANT:
-# This route must be declared before /{order_id}/status
-@router.get(
-    "/admin",
-    response_model=list[OrderResponse]
-)
-def get_all_orders(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin"))
-):
-    orders = (
-        db.query(Order)
-        .order_by(Order.created_at.desc())
-        .all()
-    )
-
-    return orders
-
 
 # ---------------------------------------------------------
 # Update Order Status - Admin
