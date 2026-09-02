@@ -1,19 +1,12 @@
-import asyncio
+import pytest
 import websockets
+from websockets.exceptions import InvalidStatus
 
 
-async def test_websocket():
-
+@pytest.mark.anyio
+async def test_websocket_no_token():
     url = "ws://127.0.0.1:8000/ws"
 
-    try:
-        async with websockets.connect(url) as websocket:
-            print("WebSocket connected WITHOUT token!")
-            await websocket.wait_closed()
-
-    except Exception as e:
-        print("WebSocket connection rejected:")
-        print(type(e).__name__, e)
-
-
-asyncio.run(test_websocket())
+    with pytest.raises(InvalidStatus):
+        async with websockets.connect(url):
+            pass

@@ -5,61 +5,109 @@ from sqlalchemy import pool
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models import User, Product, Cart, Order, OrderItem, Payment
+from app.models import (
+    User,
+    Product,
+    Cart,
+    Order,
+    OrderItem,
+    Payment,
+    WebhookEvent,
+)
 
 from alembic import context
 
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# =========================================================
+# Alembic Config
+# =========================================================
+
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+
+# =========================================================
+# Logging
+# =========================================================
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
+
+# =========================================================
+# SQLAlchemy Metadata
+# =========================================================
+
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
+# =========================================================
+# Ignore Django-managed tables
+# =========================================================
+
+DJANGO_TABLES = {
+    "django_migrations",
+    "django_session",
+    "django_admin_log",
+    "django_content_type",
+    "auth_permission",
+    "auth_group",
+    "auth_group_permissions",
+    "auth_user",
+    "auth_user_groups",
+    "auth_user_user_permissions",
+}
+
+
+def include_object(
+    object,
+    name,
+    type_,
+    reflected,
+    compare_to,
+):
+    """
+    Tell Alembic which database objects should be
+    included during autogeneration.
+
+    Django owns its own tables, so Alembic must ignore them.
+    """
+
+    if type_ == "table" and name in DJANGO_TABLES:
+        return False
+
+    return True
+
+
+# =========================================================
+# Offline Migration
+# =========================================================
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """Run migrations in offline mode."""
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
     url = config.get_main_option("sqlalchemy.url")
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
+# =========================================================
+# Online Migration
+# =========================================================
+
 def run_migrations_online() -> None:
-    
+
     configuration = config.get_section(
         config.config_ini_section,
-        {}
+        {},
     )
 
     configuration["sqlalchemy.url"] = settings.DATABASE_URL
@@ -71,13 +119,20 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+
         context.configure(
             connection=connection,
-            target_metadata=target_metadata
+            target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
             context.run_migrations()
+
+
+# =========================================================
+# Run
+# =========================================================
 
 if context.is_offline_mode():
     run_migrations_offline()

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Smart E-Commerce Analytics Dashboard</title>
+
+{% load static %}
+<script src="{% static 'dashboard/js/chart.umd.js' %}"></script>
+
+<style>
+
+    body {
+        font-family: Arial, sans-serif;
+        background: #f4f6f9;
+        margin: 0;
+        padding: 30px;
+    }
+
+    .container {
+        max-width: 1200px;
+        margin: auto;
+    }
+
+    h1 {
+        margin-bottom: 5px;
+    }
+
+    .subtitle {
+        color: #666;
+        margin-bottom: 30px;
+    }
+
+    /* ==============================
+       STATISTICS
+    ============================== */
+
+    .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .card h3 {
+        margin-top: 0;
+        color: #555;
+    }
+
+    .card .number {
+        font-size: 28px;
+        font-weight: bold;
+    }
+
+    /* ==============================
+       REPORTS
+    ============================== */
+
+    .reports {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .reports h2 {
+        margin-top: 0;
+    }
+
+    .export-buttons {
+        display: flex;
+        gap: 15px;
+        margin-top: 15px;
+        flex-wrap: wrap;
+    }
+
+    .export-button {
+        display: inline-block;
+        padding: 12px 20px;
+        border-radius: 6px;
+        text-decoration: none;
+        color: white;
+        font-weight: bold;
+    }
+
+    .csv-button {
+        background: #198754;
+    }
+
+    .pdf-button {
+        background: #dc3545;
+    }
+
+    .export-button:hover {
+        opacity: 0.85;
+    }
+
+    /* ==============================
+       CHARTS
+    ============================== */
+
+    .charts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .chart-card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .chart-card.full-width {
+        grid-column: 1 / -1;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 350px;
+    }
+
+    /* ==============================
+       LOW STOCK
+    ============================== */
+
+    .low-stock {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .low-stock h2 {
+        margin-top: 0;
+    }
+
+    .low-stock table {
+        margin-top: 15px;
+    }
+
+    .low-stock-value {
+        font-weight: bold;
+    }
+
+    .no-alert {
+        padding: 15px;
+        border-radius: 6px;
+        background: #f8f9fa;
+    }
+
+    /* ==============================
+       ORDERS
+    ============================== */
+
+    .orders {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+    }
+
+    th,
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    th {
+        background: #f8f9fa;
+    }
+
+    .status {
+        font-weight: bold;
+    }
+
+    /* ==============================
+       RESPONSIVE
+    ============================== */
+
+    @media (max-width: 900px) {
+
+        .stats {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .charts {
+            grid-template-columns: 1fr;
+        }
+
+        .chart-card.full-width {
+            grid-column: auto;
+        }
+    }
+
+    @media (max-width: 600px) {
+
+        body {
+            padding: 15px;
+        }
+
+        .stats {
+            grid-template-columns: 1fr;
+        }
+
+        .export-buttons {
+            flex-direction: column;
+        }
+
+        .export-button {
+            text-align: center;
+        }
+    }
+
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<!-- HEADER -->
+
+<h1>
+    Smart E-Commerce Analytics Dashboard
+</h1>
+
+<p class="subtitle">
+    Monitor users, products, orders and payments.
+</p>
+
+
+<!-- STATISTICS -->
+
+<div class="stats">
+
+    <div class="card">
+        <h3>Total Users</h3>
+
+        <div class="number">
+            {{ total_users }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Total Products</h3>
+
+        <div class="number">
+            {{ total_products }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Total Orders</h3>
+
+        <div class="number">
+            {{ total_orders }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Total Revenue</h3>
+
+        <div class="number">
+            ₹{{ revenue|floatformat:2 }}
+        </div>
+    </div>
+
+</div>
+
+
+<!-- EXPORT REPORTS -->
+
+<div class="reports">
+
+    <h2>
+        Export Reports
+    </h2>
+
+    <p>
+        Download the latest order information in CSV or PDF format.
+    </p>
+
+    <div class="export-buttons">
+
+        <a
+            href="{% url 'export_orders_csv' %}"
+            class="export-button csv-button"
+        >
+            📊 Export Orders CSV
+        </a>
+
+        <a
+            href="{% url 'export_orders_pdf' %}"
+            class="export-button pdf-button"
+        >
+            📄 Export Orders PDF
+        </a>
+
+        <a
+            href="{% url 'export_sales_csv' %}"
+            class="export-button csv-button"
+        >
+            💰 Export Sales CSV
+        </a>
+
+        <a
+            href="{% url 'export_sales_pdf' %}"
+            class="export-button pdf-button"
+        >
+            💰 Export Sales PDF
+        </a>
+
+        <a
+            href="{% url 'export_users_csv' %}"
+            class="export-button csv-button"
+        >
+            👥 Export Users CSV
+        </a>
+
+        <a
+            href="{% url 'export_users_pdf' %}"
+            class="export-button pdf-button"
+        >
+            👥 Export Users PDF
+        </a>
+
+    </div>
+
+</div>
+
+
+<!-- CHARTS -->
+
+<div class="charts">
+
+    <!-- ORDER STATUS -->
+
+    <div class="chart-card">
+
+        <h2>
+            Order Status
+        </h2>
+
+        <div class="chart-container">
+
+            <canvas id="orderStatusChart"></canvas>
+
+        </div>
+
+    </div>
+
+
+    <!-- PAYMENT STATUS -->
+
+    <div class="chart-card">
+
+        <h2>
+            Payment Status
+        </h2>
+
+        <div class="chart-container">
+
+            <canvas id="paymentStatusChart"></canvas>
+
+        </div>
+
+    </div>
+
+
+    <!-- REVENUE -->
+
+    <div class="chart-card full-width">
+
+        <h2>
+            Revenue Trends
+        </h2>
+
+        <div class="chart-container">
+
+            <canvas id="revenueChart"></canvas>
+
+        </div>
+
+    </div>
+
+
+    <!-- TOP PRODUCTS -->
+
+    <div class="chart-card full-width">
+
+        <h2>
+            Top-Selling Products
+        </h2>
+
+        <div class="chart-container">
+
+            <canvas id="topProductsChart"></canvas>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- LOW STOCK -->
+
+<div class="low-stock">
+
+    <h2>
+        ⚠️ Low Stock Alerts
+    </h2>
+
+    <p>
+        Products with stock at or below
+        <strong>{{ low_stock_threshold }}</strong>
+        units.
+    </p>
+
+    {% if low_stock_products %}
+
+    <table>
+
+        <thead>
+
+            <tr>
+                <th>Product ID</th>
+                <th>Product Name</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Stock</th>
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+            {% for product in low_stock_products %}
+
+            <tr>
+
+                <td>
+                    #{{ product.id }}
+                </td>
+
+                <td>
+                    {{ product.name }}
+                </td>
+
+                <td>
+                    {{ product.category }}
+                </td>
+
+                <td>
+                    ₹{{ product.price|floatformat:2 }}
+                </td>
+
+                <td class="low-stock-value">
+
+                    {% if product.stock == 0 %}
+
+                        🔴 Out of stock
+
+                    {% else %}
+
+                        ⚠️ {{ product.stock }}
+
+                    {% endif %}
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+    {% else %}
+
+    <div class="no-alert">
+        ✅ No low-stock products currently.
+    </div>
+
+    {% endif %}
+
+</div>
+
+
+<!-- RECENT ORDERS -->
+
+<div class="orders">
+
+    <h2>
+        Recent Orders
+    </h2>
+
+    <table>
+
+        <thead>
+
+            <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Total Amount</th>
+                <th>Order Status</th>
+                <th>Payment Status</th>
+                <th>Date</th>
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+            {% for order in recent_orders %}
+
+            <tr>
+
+                <td>
+                    #{{ order.id }}
+                </td>
+
+                <td>
+                    {{ order.user }}
+                </td>
+
+                <td>
+                    ₹{{ order.total_amount|floatformat:2 }}
+                </td>
+
+                <td class="status">
+                    {{ order.status|title }}
+                </td>
+
+                <td>
+
+                    {% if order.payment %}
+
+                        {{ order.payment.status|title }}
+
+                    {% else %}
+
+                        N/A
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+                    {{ order.created_at|date:"d M Y H:i" }}
+                </td>
+
+            </tr>
+
+            {% empty %}
+
+            <tr>
+
+                <td colspan="6">
+                    No orders found.
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+```
+
+</div>
+
+<!-- =====================================================
+     DJANGO CHART DATA
+===================================================== -->
+
+{{ order_status_labels|json_script:"order-status-labels" }}
+{{ order_status_counts|json_script:"order-status-counts" }}
+
+{{ payment_status_labels|json_script:"payment-status-labels" }}
+{{ payment_status_counts|json_script:"payment-status-counts" }}
+
+{{ revenue_labels|json_script:"revenue-labels" }}
+{{ revenue_values|json_script:"revenue-values" }}
+
+{{ top_product_labels|json_script:"top-product-labels" }}
+{{ top_product_quantities|json_script:"top-product-quantities" }}
+{{ top_product_sales|json_script:"top-product-sales" }}
+
+<!-- =====================================================
+     CHART INITIALIZATION
+===================================================== -->
+
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    /*
+     * Make sure Chart.js loaded
+     */
+
+    if (typeof Chart === "undefined") {
+
+        console.error(
+            "Chart.js failed to load."
+        );
+
+        return;
+    }
+
+
+    /*
+     * Read Django JSON data
+     */
+
+    const orderStatusLabels = JSON.parse(
+        document.getElementById(
+            "order-status-labels"
+        ).textContent
+    );
+
+    const orderStatusCounts = JSON.parse(
+        document.getElementById(
+            "order-status-counts"
+        ).textContent
+    );
+
+
+    const paymentStatusLabels = JSON.parse(
+        document.getElementById(
+            "payment-status-labels"
+        ).textContent
+    );
+
+    const paymentStatusCounts = JSON.parse(
+        document.getElementById(
+            "payment-status-counts"
+        ).textContent
+    );
+
+
+    const revenueLabels = JSON.parse(
+        document.getElementById(
+            "revenue-labels"
+        ).textContent
+    );
+
+    const revenueValues = JSON.parse(
+        document.getElementById(
+            "revenue-values"
+        ).textContent
+    );
+
+
+    const topProductLabels = JSON.parse(
+        document.getElementById(
+            "top-product-labels"
+        ).textContent
+    );
+
+    const topProductQuantities = JSON.parse(
+        document.getElementById(
+            "top-product-quantities"
+        ).textContent
+    );
+
+    const topProductSales = JSON.parse(
+        document.getElementById(
+            "top-product-sales"
+        ).textContent
+    );
+
+
+    /*
+     * DEBUG INFORMATION
+     */
+
+    console.log(
+        "Order Status:",
+        orderStatusLabels,
+        orderStatusCounts
+    );
+
+    console.log(
+        "Payment Status:",
+        paymentStatusLabels,
+        paymentStatusCounts
+    );
+
+    console.log(
+        "Revenue:",
+        revenueLabels,
+        revenueValues
+    );
+
+    console.log(
+        "Top Products:",
+        topProductLabels,
+        topProductQuantities,
+        topProductSales
+    );
+
+
+    /*
+     * ORDER STATUS CHART
+     */
+
+    new Chart(
+        document.getElementById("orderStatusChart"),
+        {
+            type: "doughnut",
+
+            data: {
+                labels: orderStatusLabels,
+
+                datasets: [
+                    {
+                        label: "Orders",
+                        data: orderStatusCounts
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                }
+            }
+        }
+    );
+
+
+    /*
+     * PAYMENT STATUS CHART
+     */
+
+    new Chart(
+        document.getElementById("paymentStatusChart"),
+        {
+            type: "doughnut",
+
+            data: {
+                labels: paymentStatusLabels,
+
+                datasets: [
+                    {
+                        label: "Payments",
+                        data: paymentStatusCounts
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                }
+            }
+        }
+    );
+
+
+    /*
+     * REVENUE TREND
+     */
+
+    new Chart(
+        document.getElementById("revenueChart"),
+        {
+            type: "line",
+
+            data: {
+                labels: revenueLabels,
+
+                datasets: [
+                    {
+                        label: "Revenue (₹)",
+
+                        data: revenueValues,
+
+                        tension: 0.3,
+
+                        fill: true
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                scales: {
+
+                    y: {
+
+                        beginAtZero: true,
+
+                        ticks: {
+
+                            callback: function(value) {
+
+                                return "₹" + value;
+
+                            }
+
+                        }
+
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+                        display: true
+                    }
+
+                }
+
+            }
+        }
+    );
+
+
+    /*
+     * TOP SELLING PRODUCTS
+     */
+
+    new Chart(
+        document.getElementById("topProductsChart"),
+        {
+            type: "bar",
+
+            data: {
+
+                labels: topProductLabels,
+
+                datasets: [
+                    {
+                        label: "Units Sold",
+
+                        data: topProductQuantities
+                    }
+                ]
+
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                scales: {
+
+                    y: {
+
+                        beginAtZero: true,
+
+                        ticks: {
+
+                            precision: 0
+
+                        }
+
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+
+                        display: true
+
+                    }
+
+                }
+
+            }
+
+        }
+
+    );
+
+});
+
+</script>
+</body>
+</html>

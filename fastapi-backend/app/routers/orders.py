@@ -166,6 +166,34 @@ def get_my_orders(
 
     return orders
 
+# ---------------------------------------------------------
+# Get Order By ID
+# ---------------------------------------------------------
+@router.get(
+    "/{order_id}",
+    response_model=OrderResponse
+)
+def get_order_by_id(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    order = (
+        db.query(Order)
+        .filter(
+            Order.id == order_id,
+            Order.user_id == current_user.id
+        )
+        .first()
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+
+    return order
 
 # ---------------------------------------------------------
 # Get All Orders - Admin
