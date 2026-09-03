@@ -1,6 +1,7 @@
 import Products from "./components/Products";
 import Cart from "./components/Cart";
 import Login from "./components/Login";
+import Orders from "./components/Orders";
 
 function App() {
   return (
@@ -12,6 +13,8 @@ function App() {
       <Products />
 
       <Cart />
+
+      <Orders />
     </div>
   );
 }

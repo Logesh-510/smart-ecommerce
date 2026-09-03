@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -7,6 +8,7 @@ from app.models.cart import Cart
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.user import User
+from app.models.return_request import ReturnRequest
 
 from app.routers.notifications import create_notification
 from app.routers.websocket import manager
@@ -14,6 +16,7 @@ from app.routers.websocket import manager
 from app.services.email import send_email
 
 from app.schemas.order import OrderResponse
+from app.schemas.return_request import ReturnRequestCreate
 from app.dependencies.auth import get_current_user
 from app.dependencies.rbac import require_role
 
@@ -171,7 +174,8 @@ def get_my_orders(
 # Get All Orders - Admin
 # ---------------------------------------------------------
 # IMPORTANT:
-# This route must be declared before /{order_id}/status
+# This route must be declared before /{order_id}/return
+# and /{order_id}/status
 @router.get(
     "/admin",
     response_model=list[OrderResponse]
@@ -187,6 +191,7 @@ def get_all_orders(
     )
 
     return orders
+
 
 # ---------------------------------------------------------
 # Get Order By ID
@@ -217,6 +222,114 @@ def get_order_by_id(
 
     return order
 
+
+# ---------------------------------------------------------
+# Request Return
+# ---------------------------------------------------------
+@router.post(
+    "/{order_id}/return"
+)
+def request_return(
+    order_id: int,
+    request: ReturnRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Find the customer's order
+    order = (
+        db.query(Order)
+        .filter(
+            Order.id == order_id,
+            Order.user_id == current_user.id
+        )
+        .first()
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found"
+        )
+
+    # 2. Return is allowed only for delivered orders
+    if order.status != "delivered":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Return can only be requested for delivered orders"
+        )
+
+    # 3. Make sure delivery date exists
+    if not order.delivered_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Delivery date is not available for this order"
+        )
+
+    # 4. Check the 7-day return window
+    now = datetime.now(timezone.utc)
+
+    delivered_at = order.delivered_at
+
+    # Handle old database timestamps without timezone information
+    if delivered_at.tzinfo is None:
+        delivered_at = delivered_at.replace(tzinfo=timezone.utc)
+
+    return_deadline = delivered_at + timedelta(days=7)
+
+    if now > return_deadline:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Return window has expired. "
+                "Returns are allowed within 7 days of delivery."
+            )
+        )
+
+    # 5. Prevent duplicate pending return requests
+    existing_request = (
+        db.query(ReturnRequest)
+        .filter(
+            ReturnRequest.order_id == order.id,
+            ReturnRequest.status == "pending"
+        )
+        .first()
+    )
+
+    if existing_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A return request is already pending for this order"
+        )
+
+    # 6. Create return request
+    return_request = ReturnRequest(
+        order_id=order.id,
+        user_id=current_user.id,
+        reason=request.reason,
+        comment=request.comment,
+        status="pending"
+    )
+
+    db.add(return_request)
+
+    # 7. Update order status
+    order.status = "return_requested"
+
+    # 8. Save changes
+    db.commit()
+    db.refresh(return_request)
+
+    return {
+        "message": "Return request submitted successfully",
+        "return_request_id": return_request.id,
+        "order_id": return_request.order_id,
+        "reason": return_request.reason,
+        "comment": return_request.comment,
+        "status": return_request.status,
+        "created_at": return_request.created_at
+    }
+
+
 # ---------------------------------------------------------
 # Update Order Status - Admin
 # ---------------------------------------------------------
@@ -235,7 +348,8 @@ async def update_order_status(
         "confirmed",
         "shipped",
         "delivered",
-        "cancelled"
+        "cancelled",
+        "return_requested"
     }
 
     # 1. Validate status
@@ -262,7 +376,11 @@ async def update_order_status(
         )
 
     # 3. Update order status
+    previous_status = order.status
     order.status = request.status
+
+    if request.status == "delivered" and previous_status != "delivered":
+        order.delivered_at = datetime.now(timezone.utc)
 
     message = (
         f"Your order #{order.id} status has been updated "

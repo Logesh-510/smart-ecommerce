@@ -13,6 +13,7 @@ from app.models import (
     OrderItem,
     Payment,
     WebhookEvent,
+    ReturnRequest,
 )
 
 from alembic import context

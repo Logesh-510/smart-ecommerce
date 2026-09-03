@@ -41,6 +41,11 @@ class Order(Base):
         nullable=False
     )
 
+    delivered_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    
     user = relationship(
         "User",
         back_populates="orders"
