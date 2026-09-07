@@ -1,15 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.database import get_db
 from app.dependencies.rbac import require_role
+
 from app.models.product import Product
 from app.models.user import User
+from app.models.review import Review
+
+from app.schemas.review import ProductReviewsResponse
+
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
     ProductResponse,
 )
+
 
 router = APIRouter(
     prefix="/products",
@@ -105,6 +112,7 @@ def get_products(
 
     return query.all()
 
+
 # --------------------------------
 # GET PRODUCTS BY CATEGORY
 # --------------------------------
@@ -122,6 +130,87 @@ def get_products_by_category(
     ).all()
 
     return products
+
+
+# --------------------------------
+# GET PRODUCT REVIEWS
+# --------------------------------
+
+@router.get(
+    "/{product_id}/reviews",
+    response_model=ProductReviewsResponse
+)
+def get_product_reviews(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+
+    # Check whether product exists
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
+
+    # Only approved reviews are visible
+    approved_reviews_query = (
+        db.query(Review)
+        .filter(
+            Review.product_id == product_id,
+            Review.status == "approved"
+        )
+    )
+
+    # Total approved reviews
+    total_reviews = approved_reviews_query.count()
+
+    # Average rating
+    average_rating = (
+        approved_reviews_query
+        .with_entities(
+            func.avg(Review.rating)
+        )
+        .scalar()
+    )
+
+    # All approved reviews
+    reviews = (
+        approved_reviews_query
+        .order_by(
+            Review.created_at.desc()
+        )
+        .all()
+    )
+
+    # Top 3 highest-rated reviews
+    top_reviews = (
+        approved_reviews_query
+        .order_by(
+            Review.rating.desc(),
+            Review.created_at.desc()
+        )
+        .limit(3)
+        .all()
+    )
+
+    return {
+        "product_id": product_id,
+        "average_rating": (
+            round(float(average_rating), 2)
+            if average_rating is not None
+            else 0.0
+        ),
+        "total_reviews": total_reviews,
+        "reviews": reviews,
+        "top_reviews": top_reviews
+    }
+
 
 # --------------------------------
 # GET SINGLE PRODUCT

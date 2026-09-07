@@ -6,3 +6,4 @@ from app.models.payment import Payment
 from app.models.notification import Notification
 from app.models.webhook_event import WebhookEvent
 from app.models.return_request import ReturnRequest
+from app.models.review import Review

@@ -10,6 +10,7 @@ from app.routers.payment import router as payment_router
 from app.routers.notifications import router as notifications_router
 from app.routers.websocket import router as websocket_router
 from app.routers.admin import router as admin_router
+from app.routers.reviews import router as reviews_router
 
 app = FastAPI(
     title="Smart E-Commerce API",
@@ -38,6 +39,7 @@ app.include_router(payment_router)
 app.include_router(notifications_router)
 app.include_router(websocket_router)
 app.include_router(admin_router)
+app.include_router(reviews_router)
 
 @app.get("/")
 def root():

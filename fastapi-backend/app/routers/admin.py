@@ -13,13 +13,17 @@ from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.payment import Payment
 from app.models.notification import Notification
+from app.models.review import Review
+
 from app.services.email import send_email
+
 
 # =========================================================
 # Stripe Configuration
 # =========================================================
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
 
 # =========================================================
 # Router Configuration
@@ -29,6 +33,7 @@ router = APIRouter(
     prefix="/admin",
     tags=["Admin"]
 )
+
 
 # =========================================================
 # Get All Return Requests
@@ -46,6 +51,7 @@ def get_returns(
     )
 
     return return_requests
+
 
 # =========================================================
 # Approve Return Request
@@ -506,4 +512,185 @@ def reject_return(
         "return_request_id": return_request.id,
         "order_id": return_request.order_id,
         "status": return_request.status
+    }
+
+
+# =========================================================
+# Get All Reviews
+# =========================================================
+
+@router.get("/reviews")
+def get_reviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+
+    reviews = (
+        db.query(Review)
+        .order_by(Review.created_at.desc())
+        .all()
+    )
+
+    return reviews
+
+
+# =========================================================
+# Approve Review
+# =========================================================
+
+@router.post("/reviews/{review_id}/approve")
+def approve_review(
+    review_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+
+    # -----------------------------------------------------
+    # Find Review
+    # -----------------------------------------------------
+
+    review = (
+        db.query(Review)
+        .filter(Review.id == review_id)
+        .first()
+    )
+
+    if not review:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Review not found"
+        )
+
+
+    # -----------------------------------------------------
+    # Validate Review Status
+    # -----------------------------------------------------
+
+    if review.status != "pending":
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending reviews can be approved"
+        )
+
+
+    # -----------------------------------------------------
+    # Approve Review
+    # -----------------------------------------------------
+
+    review.status = "approved"
+
+
+    # -----------------------------------------------------
+    # Save Changes
+    # -----------------------------------------------------
+
+    try:
+
+        db.commit()
+        db.refresh(review)
+
+    except Exception as e:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database update failed: {str(e)}"
+        )
+
+
+    # -----------------------------------------------------
+    # Response
+    # -----------------------------------------------------
+
+    return {
+        "message": "Review approved successfully",
+        "review_id": review.id,
+        "product_id": review.product_id,
+        "user_id": review.user_id,
+        "rating": review.rating,
+        "status": review.status
+    }
+
+
+# =========================================================
+# Reject Review
+# =========================================================
+
+@router.post("/reviews/{review_id}/reject")
+def reject_review(
+    review_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+
+    # -----------------------------------------------------
+    # Find Review
+    # -----------------------------------------------------
+
+    review = (
+        db.query(Review)
+        .filter(Review.id == review_id)
+        .first()
+    )
+
+    if not review:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Review not found"
+        )
+
+
+    # -----------------------------------------------------
+    # Validate Review Status
+    # -----------------------------------------------------
+
+    if review.status != "pending":
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending reviews can be rejected"
+        )
+
+
+    # -----------------------------------------------------
+    # Reject Review
+    # -----------------------------------------------------
+
+    review.status = "rejected"
+
+
+    # -----------------------------------------------------
+    # Save Changes
+    # -----------------------------------------------------
+
+    try:
+
+        db.commit()
+        db.refresh(review)
+
+    except Exception as e:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database update failed: {str(e)}"
+        )
+
+
+    # -----------------------------------------------------
+    # Response
+    # -----------------------------------------------------
+
+    return {
+        "message": "Review rejected successfully",
+        "review_id": review.id,
+        "product_id": review.product_id,
+        "user_id": review.user_id,
+        "rating": review.rating,
+        "status": review.status
     }
