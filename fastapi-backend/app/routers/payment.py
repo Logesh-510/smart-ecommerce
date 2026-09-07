@@ -199,6 +199,7 @@ def update_payment_status(
         "pending",
         "completed",
         "failed",
+        "refunded",
     }
 
     if status_data.status not in allowed_statuses:
