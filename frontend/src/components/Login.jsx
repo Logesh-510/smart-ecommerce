@@ -15,9 +15,11 @@ function Login() {
 
     try {
       await login(email, password);
-
       setMessage("Login successful!");
-    } catch (error) {
+
+      // Notify other components that login succeeded
+      window.dispatchEvent(new Event("login-success"));
+    }catch (error) {
       console.error(error);
 
       if (error.response?.data?.detail) {

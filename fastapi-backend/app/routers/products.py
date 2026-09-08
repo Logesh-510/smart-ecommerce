@@ -8,6 +8,7 @@ from app.dependencies.rbac import require_role
 from app.models.product import Product
 from app.models.user import User
 from app.models.review import Review
+from app.models.product_view import ProductView
 
 from app.schemas.review import ProductReviewsResponse
 
@@ -38,7 +39,6 @@ def create_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin"))
 ):
-
     product = Product(
         name=product_data.name,
         description=product_data.description,
@@ -72,7 +72,6 @@ def get_products(
     in_stock: bool | None = None,
     db: Session = Depends(get_db)
 ):
-
     query = db.query(Product)
 
     # Category filter
@@ -125,9 +124,11 @@ def get_products_by_category(
     category: str,
     db: Session = Depends(get_db)
 ):
-    products = db.query(Product).filter(
-        Product.category == category
-    ).all()
+    products = (
+        db.query(Product)
+        .filter(Product.category == category)
+        .all()
+    )
 
     return products
 
@@ -144,8 +145,6 @@ def get_product_reviews(
     product_id: int,
     db: Session = Depends(get_db)
 ):
-
-    # Check whether product exists
     product = (
         db.query(Product)
         .filter(Product.id == product_id)
@@ -158,7 +157,6 @@ def get_product_reviews(
             detail="Product not found"
         )
 
-    # Only approved reviews are visible
     approved_reviews_query = (
         db.query(Review)
         .filter(
@@ -167,10 +165,8 @@ def get_product_reviews(
         )
     )
 
-    # Total approved reviews
     total_reviews = approved_reviews_query.count()
 
-    # Average rating
     average_rating = (
         approved_reviews_query
         .with_entities(
@@ -179,7 +175,6 @@ def get_product_reviews(
         .scalar()
     )
 
-    # All approved reviews
     reviews = (
         approved_reviews_query
         .order_by(
@@ -188,7 +183,6 @@ def get_product_reviews(
         .all()
     )
 
-    # Top 3 highest-rated reviews
     top_reviews = (
         approved_reviews_query
         .order_by(
@@ -213,7 +207,75 @@ def get_product_reviews(
 
 
 # --------------------------------
-# GET SINGLE PRODUCT
+# GET SIMILAR PRODUCTS
+# --------------------------------
+
+@router.get(
+    "/{product_id}/similar",
+    response_model=list[ProductResponse]
+)
+def get_similar_products(
+    product_id: int,
+    db: Session = Depends(get_db)
+):
+    # Get the original product
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Product not found"
+        )
+
+    # Find products in the same category
+    # Exclude the current product
+    similar_products = (
+        db.query(Product)
+        .filter(
+            Product.category == product.category,
+            Product.id != product.id,
+            Product.stock > 0
+        )
+        .order_by(
+            Product.popularity.desc()
+        )
+        .limit(10)
+        .all()
+    )
+
+    return similar_products
+
+# --------------------------------
+# GET TRENDING PRODUCTS
+# --------------------------------
+
+@router.get(
+    "/trending",
+    response_model=list[ProductResponse]
+)
+def get_trending_products(
+    db: Session = Depends(get_db)
+):
+    trending_products = (
+        db.query(Product)
+        .filter(
+            Product.stock > 0
+        )
+        .order_by(
+            Product.popularity.desc()
+        )
+        .limit(10)
+        .all()
+    )
+
+    return trending_products
+
+# --------------------------------
+# GET SINGLE PRODUCT + TRACK VIEW
 # --------------------------------
 
 @router.get(
@@ -222,18 +284,34 @@ def get_product_reviews(
 )
 def get_product(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("customer"))
 ):
-
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
 
     if not product:
         raise HTTPException(
             status_code=404,
             detail="Product not found"
         )
+
+    # Save user browsing history
+    product_view = ProductView(
+        user_id=current_user.id,
+        product_id=product.id
+    )
+
+    db.add(product_view)
+
+    # Increase product popularity
+    product.popularity += 1
+
+    db.commit()
+    db.refresh(product)
 
     return product
 
@@ -252,10 +330,11 @@ def update_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin"))
 ):
-
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
 
     if not product:
         raise HTTPException(
@@ -288,10 +367,11 @@ def delete_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin"))
 ):
-
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
 
     if not product:
         raise HTTPException(
